@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tower Defense</title>
+    <title>Tower Defense Mejorado</title>
     <style>
         body {
             display: flex;
@@ -20,30 +20,40 @@
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        const TILE_SIZE = 40;
+        const TILE_SIZE = 20;
         const GRID_WIDTH = canvas.width / TILE_SIZE;
         const GRID_HEIGHT = canvas.height / TILE_SIZE;
 
-        let money = 100;
+        let money = 150;
         let lives = 20;
         let wave = 0;
         let enemies = [];
         let towers = [];
         let projectiles = [];
+        let path = [];
 
-        const path = [
-            {x: 0, y: 3},
-            {x: 5, y: 3},
-            {x: 5, y: 7},
-            {x: 10, y: 7},
-            {x: 10, y: 3},
-            {x: 15, y: 3}
-        ];
+        function generatePath() {
+            let x = 0;
+            let y = Math.floor(Math.random() * GRID_HEIGHT);
+            path.push({x, y});
+
+            while (x < GRID_WIDTH - 1) {
+                let direction = Math.random() < 0.7 ? 'horizontal' : 'vertical';
+                if (direction === 'horizontal' || y <= 0 || y >= GRID_HEIGHT - 1) {
+                    x++;
+                } else {
+                    y += Math.random() < 0.5 ? 1 : -1;
+                }
+                path.push({x, y});
+            }
+        }
+
+        generatePath();
 
         function drawPath() {
             ctx.strokeStyle = '#8B4513';
@@ -85,9 +95,10 @@
             constructor() {
                 this.x = path[0].x * TILE_SIZE;
                 this.y = path[0].y * TILE_SIZE;
-                this.health = 100;
-                this.speed = 1;
+                this.health = 100 + wave * 10;
+                this.speed = 0.5 + wave * 0.05;
                 this.pathIndex = 0;
+                this.value = 10 + Math.floor(wave / 2);
             }
 
             move() {
@@ -112,7 +123,7 @@
             }
 
             draw() {
-                ctx.fillStyle = 'red';
+                ctx.fillStyle = `rgb(${255 - wave * 10}, 0, 0)`;
                 ctx.beginPath();
                 ctx.arc(this.x + TILE_SIZE / 2, this.y + TILE_SIZE / 2, TILE_SIZE / 3, 0, Math.PI * 2);
                 ctx.fill();
@@ -126,11 +137,16 @@
                 this.damage = 20;
                 this.range = 100;
                 this.cooldown = 0;
+                this.level = 1;
+                this.cost = 50;
             }
 
             draw() {
-                ctx.fillStyle = 'blue';
-                ctx.fillRect(this.x * TILE_SIZE + 5, this.y * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+                ctx.fillStyle = `rgb(0, 0, ${150 + this.level * 20})`;
+                ctx.fillRect(this.x * TILE_SIZE + 2, this.y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                ctx.fillStyle = 'white';
+                ctx.font = '12px Arial';
+                ctx.fillText(this.level, this.x * TILE_SIZE + 7, this.y * TILE_SIZE + 15);
             }
 
             attack() {
@@ -145,20 +161,31 @@
                     const distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance <= this.range) {
-                        projectiles.push(new Projectile(this.x * TILE_SIZE + TILE_SIZE / 2, this.y * TILE_SIZE + TILE_SIZE / 2, enemy));
-                        this.cooldown = 30;
+                        projectiles.push(new Projectile(this.x * TILE_SIZE + TILE_SIZE / 2, this.y * TILE_SIZE + TILE_SIZE / 2, enemy, this.damage));
+                        this.cooldown = 30 - this.level * 2;
                         break;
                     }
+                }
+            }
+
+            upgrade() {
+                if (money >= this.cost) {
+                    money -= this.cost;
+                    this.level++;
+                    this.damage += 10;
+                    this.range += 10;
+                    this.cost = Math.floor(this.cost * 1.5);
                 }
             }
         }
 
         class Projectile {
-            constructor(x, y, target) {
+            constructor(x, y, target, damage) {
                 this.x = x;
                 this.y = y;
                 this.target = target;
                 this.speed = 5;
+                this.damage = damage;
             }
 
             move() {
@@ -167,7 +194,10 @@
                 const distance = Math.sqrt(dx * dx + dy * dy);
 
                 if (distance < this.speed) {
-                    this.target.health -= 20;
+                    this.target.health -= this.damage;
+                    if (this.target.health <= 0) {
+                        money += this.target.value;
+                    }
                     return true;
                 } else {
                     this.x += (dx / distance) * this.speed;
@@ -179,7 +209,7 @@
             draw() {
                 ctx.fillStyle = 'yellow';
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -187,7 +217,7 @@
         function spawnWave() {
             wave++;
             for (let i = 0; i < wave * 2; i++) {
-                setTimeout(() => enemies.push(new Enemy()), i * 1000);
+                setTimeout(() => enemies.push(new Enemy()), i * (1000 - wave * 20));
             }
         }
 
@@ -195,7 +225,10 @@
             const x = Math.floor(e.offsetX / TILE_SIZE);
             const y = Math.floor(e.offsetY / TILE_SIZE);
 
-            if (money >= 50 && !path.some(p => p.x === x && p.y === y) && !towers.some(t => t.x === x && t.y === y)) {
+            const existingTower = towers.find(t => t.x === x && t.y === y);
+            if (existingTower) {
+                existingTower.upgrade();
+            } else if (money >= 50 && !path.some(p => p.x === x && p.y === y)) {
                 towers.push(new Tower(x, y));
                 money -= 50;
             }
@@ -210,6 +243,7 @@
 
             if (enemies.length === 0) {
                 spawnWave();
+                money += 50 + wave * 10;
             }
 
             enemies = enemies.filter(enemy => {
@@ -234,7 +268,7 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.fillStyle = 'white';
                 ctx.font = '40px Arial';
-                ctx.fillText('Game Over', canvas.width / 2 - 100, canvas.height / 2);
+                ctx.fillText(`Game Over - Wave ${wave}`, canvas.width / 2 - 150, canvas.height / 2);
                 return;
             }
 
